@@ -1,0 +1,217 @@
+import ttkbootstrap as ttk
+from ttkbootstrap.tableview import Tableview
+from ttkbootstrap.constants import *
+import socket
+import threading
+import random
+import math
+
+HEADER = 64
+FORMAT = 'utf-8'
+PORT = 5050
+SERVER = socket.gethostbyname(socket.gethostname())
+ADDR = (SERVER, PORT)
+DISCONNECT_MESSAGE = '!DISCONNECTED'
+keyin_list = ["5", "10", "20", "50", "100"]
+bet_list = ["1", "5", "10", "30", "120", "160"]
+customer_list = ['123, Itachi Uchiha', '123, Sasuke Uchiha', '125, Madara Uchiha', '126, Obito Uchiha',
+                 '127, Tsunade Senju', '128, Tobirama Senju', '129, Hashirama Senju',
+                 '130, Hiruzen Sarutobi', '131, Asuma Sarutobi', '132, Konohamaru Sarutobi',
+                 '133, Naruto Uzumaki', '134, Nagato Uzumaki', '135, Karin Uzumaki', '136, Kushina Uzumaki',
+                 '137, Shisui Uchiha', '138, Agami Uchiha', '139, Hinata Hyuga', '140, Neji Hyuga', '141, Hanabi Hyuga',
+                 ]
+
+
+class CustomerSession:
+    def __init__(self, number="unknown", name="unknown", credit=0, bet=0, win=0):
+        self.number = number
+        self.name = name
+        self.credit = credit
+        self.bet = bet
+        self.win = win
+
+    def __repr__(self):
+        return f"{self.number}, {self.name}, {self.credit}, {self.bet}, {self.win}"
+
+
+class MainWindow(ttk.Window):
+    def __init__(self):
+        super().__init__()
+        self.current_customer = CustomerSession()
+        # print(self.current_customer)
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        self.geometry("640x360+640+0")
+        self.title("Client")
+
+        self.create_frame_connect().pack(fill="x", expand=True, anchor=N, pady=0)
+        # self.create_frame_send().pack(fill="x", expand=True, anchor=N, pady=10)
+        self.create_customer_info().pack(fill="x", expand=True, anchor=N, pady=0)
+        self.create_frame_play().pack(fill="x", expand=True, anchor=N, pady=0)
+        self.create_frame_display().pack(fill="x", expand=True, anchor=N, pady=0)
+
+    def client_send_msg_to_server(self, msg):
+        message = msg.encode(FORMAT)
+        msg_length = len(message)
+        send_length = str(msg_length).encode(FORMAT)
+        send_length += b' ' * (HEADER - len(send_length))
+        self.client.send(send_length)
+        self.client.send(message)
+
+    def on_engage_button_clicked(self):
+        print(self.cb_customer.get())
+        random_number, random_name = self.cb_customer.get().split(',')
+        self.current_customer.number = random_number
+        self.current_customer.name = random_name
+        self.client_send_msg_to_server(repr(self.current_customer))
+
+    def on_keyin_button_clicked(self):
+        """ Get data from cb_keyin and accumulate to current_customer.credit """
+        keyin_amount = int(self.cb_keyin_value.get())
+        current_credit = self.current_customer.credit
+        total_credit = keyin_amount + current_credit
+        # set value back to current_customer.credit and lbl_credit_display
+        self.current_customer.credit = total_credit
+        self.credit_display.set(str(total_credit))
+        print(self.current_customer)
+
+    def on_bet_button_clicked(self):
+        """ Get data from cb_bet and show """
+        bet_amount = int(self.cb_bet_value.get())
+        # set value back to current_customer.bet and lbl_credit_display
+        self.current_customer.bet = bet_amount
+        self.bet_display.set(str(bet_amount))
+        print(self.current_customer)
+
+    def on_play_button_clicked(self):
+        """ This has to pass a function deciding win or lose """
+        win_amount = 0
+        chance_of_win = random.randint(0, 9)
+        threshold = 5
+        if chance_of_win > threshold:
+            delta = chance_of_win - threshold
+            win_amount = math.floor(self.current_customer.bet * delta)
+        # after passing function win/lose
+        self.win_display.set(str(win_amount))
+        self.current_customer.win = win_amount
+
+        self.current_customer.credit = self.current_customer.credit - self.current_customer.bet\
+                                                                    + self.current_customer.win
+        self.credit_display.set(str(self.current_customer.credit))
+        print(self.current_customer)
+        # send data to server current_customer repr
+        self.client_send_msg_to_server(repr(self.current_customer))
+
+    def on_send_button_clicked(self):
+        msg = self.entry_content.get()
+        self.entry_content.delete(0, END)
+        message = msg.encode(FORMAT)
+        msg_length = len(message)
+        send_length = str(msg_length).encode(FORMAT)
+        send_length += b' ' * (HEADER - len(send_length))
+        self.client.send(send_length)
+        self.client.send(message)
+
+        print(self.client.recv(2048).decode(FORMAT))
+
+    def on_connect_button_clicked(self):
+        # self.lbl_status.configure(text=f"Connecting to {SERVER}:{PORT}")
+        self.lbl_status.configure(text=f"Connected to server")
+        self.client.connect(ADDR)
+
+    def create_frame_connect(self) -> ttk.Frame:
+        """ Create and return a frame that contains a button and a label """
+        self.frame_connect = ttk.Frame(self)
+        self.btn_connect = ttk.Button(self.frame_connect, text="Start", command=self.on_connect_button_clicked)
+        self.lbl_status = ttk.Label(self.frame_connect, background="lightgrey", anchor="center")
+
+        self.btn_connect.pack(side='left', padx=10, pady=10)
+        self.lbl_status.pack(side='left', fill='x', expand=True, padx=10, pady=10)
+
+        return self.frame_connect
+
+    def create_frame_send(self) -> ttk.Frame:
+        """ Create and return a frame that contains a button and an entry """
+        self.frame_send = ttk.Frame(self)
+        self.btn_send = ttk.Button(self.frame_send, text="Send", command=self.on_send_button_clicked)
+        self.entry_content = ttk.Entry(self.frame_send, background="lightgrey")
+
+        self.btn_send.pack(side='left', padx=10, pady=10)
+        self.entry_content.pack(side='left', fill='x', expand=True, padx=10, pady=10)
+
+        return self.frame_send
+
+    def create_customer_info(self) -> ttk.Frame:
+        self.customer_selected = ttk.StringVar()
+        self.frame_customer_info = ttk.Frame(self)
+        self.btn_engage = ttk.Button(self.frame_customer_info, text="Engage", command=self.on_engage_button_clicked)
+        self.cb_customer = ttk.Combobox(self.frame_customer_info, textvariable=self.customer_selected)
+        self.cb_customer['values'] = tuple(customer_list)
+        self.cb_customer.set(random.choice(customer_list))
+
+        self.btn_engage.pack(side='left', padx=10, pady=10)
+        self.cb_customer.pack(fill='x', padx=10, pady=10)
+
+        return self.frame_customer_info
+
+    def create_frame_play(self) -> ttk.Frame:
+        self.keyin_value = ttk.StringVar()
+        self.bet_value = ttk.StringVar()
+        self.frame_play = ttk.Frame(self)
+        self.btn_keyin = ttk.Button(self.frame_play, text="Keyin", width=8, command=self.on_keyin_button_clicked)
+        self.btn_bet = ttk.Button(self.frame_play, text="Bet", width=8, command=self.on_bet_button_clicked)
+        self.btn_play = ttk.Button(self.frame_play, text="Play", width=8, command=self.on_play_button_clicked)
+
+        self.cb_keyin_value = ttk.Combobox(self.frame_play, textvariable=self.keyin_value)
+        self.cb_keyin_value['values'] = (keyin_list)
+        self.cb_keyin_value.set(random.choice(keyin_list))
+        self.cb_bet_value = ttk.Combobox(self.frame_play, textvariable=self.bet_value)
+        self.cb_bet_value['values'] = tuple(bet_list)
+        self.cb_bet_value.set(random.choice(bet_list))
+
+        self.btn_keyin.grid(row=0, column=0, padx=10, pady=10)
+        self.cb_keyin_value.grid(row=0, column=1, padx=10, pady=10)
+        self.btn_bet.grid(row=1, column=0, padx=10, pady=10)
+        self.cb_bet_value.grid(row=1, column=1, padx=10, pady=10)
+        self.btn_play.grid(row=0, column=2, padx=10, pady=10, rowspan=2, sticky="nswe")
+
+        self.frame_play.columnconfigure(0, weight=1)
+        self.frame_play.columnconfigure(1, weight=6)
+        self.frame_play.columnconfigure(2, weight=1)
+        return self.frame_play
+
+    def create_frame_display(self) -> ttk.Frame:
+        self.credit_display = ttk.StringVar()
+        self.credit_display.set(self.current_customer.credit)
+        self.bet_display = ttk.StringVar()
+        self.bet_display.set(self.current_customer.bet)
+        self.win_display = ttk.StringVar()
+        self.win_display.set(self.current_customer.win)
+        self.frame_display = ttk.Frame(self)
+        self.lbl_credit = ttk.Label(self.frame_display, text="CREDIT", font=("Arial", 16), foreground="tomato")
+        self.lbl_bet = ttk.Label(self.frame_display, text="BET", font=("Arial", 16), foreground="tomato")
+        self.lbl_win = ttk.Label(self.frame_display, text="WIN", font=("Arial", 16), foreground="tomato")
+        self.lbl_credit_display = ttk.Label(self.frame_display, textvariable=self.credit_display,
+                                          font=("Arial", 25), foreground="tomato")
+        self.lbl_bet_display = ttk.Label(self.frame_display, textvariable=self.bet_display,
+                                            font=("Arial", 25), foreground="tomato")
+        self.lbl_win_display = ttk.Label(self.frame_display, textvariable=self.win_display,
+                                            font=("Arial", 25), foreground="tomato")
+
+        self.lbl_credit.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        self.lbl_bet.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+        self.lbl_win.grid(row=0, column=2, padx=10, pady=10, sticky="e")
+        self.lbl_credit_display.grid(row=1, column=0, padx=10, pady=0, sticky="w")
+        self.lbl_bet_display.grid(row=1, column=1, padx=10, pady=0, sticky="w")
+        self.lbl_win_display.grid(row=1, column=2, padx=10, pady=0, sticky="e")
+
+        self.frame_display.columnconfigure(0, weight=3)
+        self.frame_display.columnconfigure(1, weight=1)
+        self.frame_display.columnconfigure(2, weight=2)
+        return self.frame_display
+
+
+if __name__ == "__main__":
+    main_window = MainWindow()
+    main_window.mainloop()
